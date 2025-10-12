@@ -19,9 +19,9 @@ nsw
 # --------------------------------------------------------------------------------
 Y <- nsw %>% pull(re78)  # Outcome variable: 1978 earnings
 D <- nsw %>% pull(treat) # Treatment variable: participation in job training
-nsw <- nsw %>% mutate(weight = 1)  # add weight column first
+nsw <- nsw %>% mutate(initial_weight = 1)  # add weight column first
 X <- nsw %>%
-  dplyr::select(-treat, -re78, -weight) %>% 
+  dplyr::select(-treat, -re78, -initial_weight) %>% 
   as.matrix()
 
 
@@ -45,18 +45,13 @@ nsw <- nsw %>%
   mutate(propensity = ifelse(propensity < 0.05 | propensity > 0.95, 
                              NA_real_, propensity))
 summary(nsw$propensity)  # Confirm trimming
-nsw <- nsw %>%
-  mutate(
-    ipw = ifelse(treat == 1, 1 / propensity, 1 / (1 - propensity))
-  )
-nsw
-
 
 
 
 # --------------------------------------------------------------------------------
-# Plot propensity score distribution for treated vs control
+# Plot propensity score distribution before/after Propensity Score Weighting
 # --------------------------------------------------------------------------------
+## Before Propensity Score Weighting
 ggplot(nsw, aes(x = propensity, fill = factor(treat))) +
   geom_density(alpha = 0.4) +  # Overlay density plots
   labs(
@@ -67,8 +62,32 @@ ggplot(nsw, aes(x = propensity, fill = factor(treat))) +
   scale_fill_manual(values = c("#56B4E9","#DC000099"), 
                     labels = c("Control", "Treated")) +
   theme_minimal() +
-  ggtitle("Propensity Score Distribution")  # Visualize common support
+  ggtitle("Propensity Score Distribution before Propensity Score Weighting")  # Visualize common support
 
+
+## After Propensity Score Weighting
+ggplot(nsw, aes(x = propensity, fill = factor(treat), weight = w.out$weights)) +
+  geom_density(alpha = 0.4) +  # Overlay density plots
+  labs(
+    x = "Propensity Score",
+    y = "Density",
+    fill = "Treatment Status"
+  ) +
+  scale_fill_manual(values = c("#56B4E9","#DC000099"), 
+                    labels = c("Control", "Treated")) +
+  theme_minimal() + 
+  ggtitle("Propensity Score Distribution after Propensity Score Weighting")  # Visualize common support
+
+
+
+
+# --------------------------------------------------------------------------------
+# Calculate weight(inverse propensity weight) of unit
+# --------------------------------------------------------------------------------
+library(WeightIt)
+w.out <- weightit(treat ~ X, data = nsw, method = "glm")
+summary(w.out)
+# w.out$weights = ifelse(treat == 1, 1 / propensity, 1 / (1 - propensity))
 
 
 
@@ -86,11 +105,10 @@ ggplot(nsw, aes(x = educ, fill = factor(treat))) +
   scale_fill_manual(values = c("#56B4E9","#DC000099"), 
                     labels = c("Control", "Treated")) +
   theme_minimal() +
-  ggtitle("Years of education Distribution")  
+  ggtitle("Years of education Distribution before Propensity Score Weighting")  
 
 
-
-ggplot(nsw, aes(x = educ, fill = factor(treat), weight = ipw)) +
+ggplot(nsw, aes(x = educ, fill = factor(treat), weight = w.out$weights)) +
   geom_density(alpha = 0.4) + 
   labs(
     x = "Years of education",
@@ -101,4 +119,30 @@ ggplot(nsw, aes(x = educ, fill = factor(treat), weight = ipw)) +
                     labels = c("Control", "Treated")) +
   theme_minimal() +
   ggtitle("Years of education Distribution after Propensity Score Weighting")
+
+
+
+
+# --------------------------------------------------------------------------------
+# Treatment effect before/after Propensity Score Weighting
+# --------------------------------------------------------------------------------
+library(survey)
+data <- cbind(nsw, new_weight = w.out$weights)
+data
+
+## Before Propensity Score Weighting
+design <- svydesign(ids = ~1, weights = ~initial_weight, data = data)
+result <- svyglm(re78 ~ treat, design = design)
+summary(result)
+## The treatment effect(ATE) is 1794.3
+
+
+
+## After Propensity Score Weighting
+design <- svydesign(ids = ~1, weights = ~new_weight, data = data)
+result <- svyglm(re78 ~ treat, design = design)
+summary(result)
+# The treatment effect(ATE) is 1641.3
+
+
 
