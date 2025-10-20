@@ -2,6 +2,7 @@ library(causaldata)  # Contains example causal inference datasets
 library(tidyverse)   # Data manipulation and visualization
 library(vtable)      # Summary tables for descriptive statistics
 library(Matching)    # Functions for propensity score matching
+library(MatchIt)     # Functions for matching
 library(ggplot2)     # Plotting library
 library(dplyr)
 
@@ -49,6 +50,26 @@ summary(nsw$propensity)  # Confirm trimming
 
 
 # --------------------------------------------------------------------------------
+# Method 1: Calculate weight(inverse propensity weight) of unit
+# --------------------------------------------------------------------------------
+library(WeightIt)
+w.out <- weightit(treat ~ X, data = nsw, method = "glm")
+summary(w.out)
+# w.out$weights = ifelse(treat == 1, 1 / propensity, 1 / (1 - propensity))
+
+
+
+# --------------------------------------------------------------------------------
+# Method 2: Use nearest-neighbor matching 
+# (for each treated unit, find the control unit that is most similar in terms of covariates)
+# --------------------------------------------------------------------------------
+m.out <- matchit(treat ~ X, data = nsw, method = "nearest")
+summary(m.out)
+matched_data <- match.data(m.out)
+
+
+
+# --------------------------------------------------------------------------------
 # Plot propensity score distribution before/after Propensity Score Weighting
 # --------------------------------------------------------------------------------
 ## Before Propensity Score Weighting
@@ -79,16 +100,18 @@ ggplot(nsw, aes(x = propensity, fill = factor(treat), weight = w.out$weights)) +
   ggtitle("Propensity Score Distribution after Propensity Score Weighting")  # Visualize common support
 
 
-
-
-# --------------------------------------------------------------------------------
-# Calculate weight(inverse propensity weight) of unit
-# --------------------------------------------------------------------------------
-library(WeightIt)
-w.out <- weightit(treat ~ X, data = nsw, method = "glm")
-summary(w.out)
-# w.out$weights = ifelse(treat == 1, 1 / propensity, 1 / (1 - propensity))
-
+## After nearest-neighbor matching
+ggplot(matched_data, aes(x = propensity, fill = factor(treat))) +
+  geom_density(alpha = 0.4) +  # Overlay density plots
+  labs(
+    x = "Propensity Score",
+    y = "Density",
+    fill = "Treatment Status"
+  ) +
+  scale_fill_manual(values = c("#56B4E9","#DC000099"), 
+                    labels = c("Control", "Treated")) +
+  theme_minimal() + 
+  ggtitle("Propensity Score Distribution after nearest-neighbor matching")  # Visualize common support
 
 
 
@@ -121,6 +144,17 @@ ggplot(nsw, aes(x = educ, fill = factor(treat), weight = w.out$weights)) +
   ggtitle("Years of education Distribution after Propensity Score Weighting")
 
 
+ggplot(matched_data, aes(x = educ, fill = factor(treat))) +
+  geom_density(alpha = 0.4) +  # Overlay density plots
+  labs(
+    x = "Years of education",
+    y = "Density",
+    fill = "Treatment Status"
+  ) +
+  scale_fill_manual(values = c("#56B4E9","#DC000099"), 
+                    labels = c("Control", "Treated")) +
+  theme_minimal() +
+  ggtitle("Years of education Distribution after nearest-neighbor matching") 
 
 
 # --------------------------------------------------------------------------------
@@ -145,4 +179,9 @@ summary(result)
 # The treatment effect(ATE) is 1641.3
 
 
+
+## After nearest-neighbor matching
+result.match <- lm(re78 ~ treat, data = matched_data)
+summary(result.match)
+# The treatment effect on the Treated(ATT) is 2031.3
 
